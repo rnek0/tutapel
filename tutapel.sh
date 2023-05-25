@@ -22,22 +22,29 @@ function helpPanel(){
     exit 0
 }
 
+server="127.0.0.1"
+port="0"
+
 # Get name server
 function serverName(){
     server=$1
     port=$2
     fd="/dev/tcp/${server}/${port}"
-    status="ok"
+    status=0
     
-    # Ping.
-        (ping -c 1 "$server") &>/dev/null && echo -e " [+] ping $server up" || echo -e "${redColour} [!]${yellowColour} Server $server down" && status="exit" &  
     # Check if port is open.
-        (echo '' > $fd) 2>/dev/null && echo -e " [+] ping $port open" || echo -e "${redColour} [!]${yellowColour} Port $port closed" && status="exit" &
+        timeout 1 bash -c "(echo '' > $fd) 2>/dev/null" && echo -e " ${grayColour}[+] Port $port open" || status=$(( $status + 1 )) 
+        if [ "$status" != "0" ]; then
+            echo -e " ${redColour}[!]${endColour} Service unavailable.\n"
+            exit 1
+        fi
     # Server is available.
-        if [ "$status" == "ok" ] ; then
-            #server_name="$(exec 4<>"${fd}"; echo -e "GET / HTTP/1.1\r\nHost: ${server}/${port}/\r\nAccept: */*\r\nConnection: close\r\n\r\n" >&4 ; grep -E "^Server:." <&4;)"
-            exec 4<>${fd} && echo -e "GET / HTTP/1.1\r\nHost: ${server}/${port}/\r\nAccept: */*\r\nConnection: close\r\n\r\n" >&4 ; server_name=$(grep -E "^Server:." <&4)
+        if [ "$status" == "0" ] ; then
+            server_name="$(exec 4<>"${fd}"; echo -e "GET / HTTP/1.1\r\nHost: ${server}/${port}/\r\nAccept: */*\r\nConnection: close\r\n\r\n" >&4 ; grep -E "^Server:." <&4;)"
+            #exec 4<>${fd} && echo -e "GET / HTTP/1.1\r\nHost: ${server}/${port}/\r\nAccept: */*\r\nConnection: close\r\n\r\n" >&4 ; server_name=$(grep -E "^Server:." <&4)
             #server_name="$(exec 4<>"${fd}"; echo -e "GET / HTTP/1.1\r\nHost: ${server}/${port}/\r\nAccept: */*\r\nConnection: close\r\n\r\n" >&4 ; cat <&4;)"
+
+            exec 4>&-
         else
             echo -e " ... Service unavailable :(\n"
             exit 0
@@ -50,20 +57,31 @@ function serverName(){
         fi;
 }
 
+# Main
+function main(){
+    server=$1
+    port=$2
+
+    if [ $server ] && [ $port ]; then
+        echo -e "\n${grayColour} Search ${purpleColour}${server}:${port}${endColour}"
+        serverName $server $port
+    else
+        helpPanel
+    fi;
+}
+
 # Menu
-noargs="true"
 while getopts "s:p:,h" arg; do 
     case $arg in 
         s) server="$OPTARG";;
-        p) port="$OPTARG"; if [[ $port -lt 0 ]] || [[ $port -gt 65536 ]]; then helpPanel; fi; ;;
+        p) port="$OPTARG"; if [[ $port -le 0 ]] || [[ $port -gt 65536 ]]; then helpPanel; fi; ;;
         h) helpPanel;;
     esac
-    noargs="false"
 done
 
-if [ "$noargs" == "false" ] && [ -z "$server" ] || [ -z "$port" ]; then
+# Start
+if [ "$#" != "4" ]; then
     helpPanel
 else
-    echo -e "\n${grayColour} ... server search :${purpleColour} ${server}:${port}${endColour}\n"
-    serverName $server $port
-fi;
+    main $server $port    
+fi
